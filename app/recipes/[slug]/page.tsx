@@ -1,12 +1,13 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import Image from 'next/image';
 import Link from 'next/link';
 import { getRecipe, RECIPES } from '@/data/recipes';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Clock, Link2, BookOpenText, Info, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, Clock, Link2, BookOpenText, Info } from 'lucide-react';
 import {
   matchAffiliatesFromIngredients,
   mergeRecipeHints,
@@ -15,21 +16,30 @@ import {
   type AffItem,
 } from '@/lib/affiliates';
 import { getBaseUrl } from '@/lib/site';
+import { AffLink } from '@/components/AffLink';
+import { StickyAffBar } from '@/components/StickyAffBar';
+import TrackedAmazonLink from '@/components/TrackedAmazonLink';
 
-// Revalidate to keep static pages fresh
 export const revalidate = 60 * 60;
 
 export function generateStaticParams() {
   return RECIPES.map((r) => ({ slug: r.slug }));
 }
 
-export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
   const { slug } = await params;
   const r = getRecipe(slug);
   if (!r) return {};
+
   const base = getBaseUrl();
-  const title = `${r.title} | Recipe`;
-  const desc = `Ingredients and steps for ${r.title}. Ready in ${r.time}.`;
+  const title = `${r.title} Recipe (${r.time})`;
+  const desc = r.seoDescription
+    ? r.seoDescription
+    : `Make ${r.title} at home. Ingredients, step-by-step instructions, timing (${r.time}), and tools.`;
   const url = `${base}/recipes/${r.slug}`;
   const og = `${base}/og/recipe/${r.slug}.png`;
 
@@ -37,44 +47,55 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title,
     description: desc,
     alternates: { canonical: url },
+    robots: {
+      index: true,
+      follow: true,
+      maxImagePreview: 'large',
+      maxSnippet: -1,
+      maxVideoPreview: -1,
+    },
     openGraph: {
       type: 'article',
       title,
       description: desc,
       url,
-      images: [{ url: og, width: 1200, height: 630, alt: r.title }],
+      images: [{ url: og, width: 1200, height: 630, alt: `${r.title} finished dish` }],
     },
-    twitter: {
-      card: 'summary_large_image',
-      title,
-      description: desc,
-      images: [og],
+    twitter: { card: 'summary_large_image', title, description: desc, images: [og] },
+    other: {
+      'og:site_name': 'Recipe.System',
+      'article:section': r.tag || 'Recipes',
+      'article:published_time': r.date || '',
     },
   };
 }
 
-// JSON-LD helpers
 function RecipeJsonLd({ recipe }: { recipe: NonNullable<ReturnType<typeof getRecipe>> }) {
-  const totalTimeIso =
-    typeof recipe.time === 'string' && /^\d+/.test(recipe.time)
-      ? `PT${recipe.time.replace(/\D/g, '')}M`
+  const toISO = (min?: string | number) =>
+    typeof min === 'string' && /^\d+/.test(min)
+      ? `PT${min.replace(/\D/g, '')}M`
+      : typeof min === 'number'
+      ? `PT${min}M`
       : undefined;
-  
+
   const base = getBaseUrl();
 
-  const jsonLd = {
+  const jsonLd: any = {
     '@context': 'https://schema.org',
     '@type': 'Recipe',
     name: recipe.title,
-    description: `Recipe for ${recipe.title}`,
+    description: recipe.seoDescription || `Recipe for ${recipe.title}`,
     datePublished: recipe.date ?? undefined,
+    image: recipe.image ? [recipe.image] : [`${base}/og/recipe/${recipe.slug}.png`],
     author: recipe.author
       ? { '@type': 'Person', name: recipe.author }
-      : { '@type': 'Person', name: 'Recipe.System' },
-    image: recipe.image ? [recipe.image] : [`${base}/og/recipe/${recipe.slug}.png`],
+      : { '@type': 'Organization', name: 'Recipe.System' },
     recipeCategory: recipe.tag || undefined,
-    keywords: [recipe.tag, recipe.title].filter(Boolean).join(', '),
-    totalTime: totalTimeIso,
+    recipeCuisine: recipe.cuisine || undefined,
+    keywords: [recipe.tag, recipe.title, ...(recipe.keywords || [])].filter(Boolean).join(', '),
+    totalTime: toISO(recipe.time),
+    prepTime: toISO(recipe.prepTime),
+    cookTime: toISO(recipe.cookTime),
     recipeYield: recipe.yield ?? undefined,
     recipeIngredient: recipe.ingredients,
     recipeInstructions: recipe.steps.map((s: string, i: number) => ({
@@ -82,7 +103,36 @@ function RecipeJsonLd({ recipe }: { recipe: NonNullable<ReturnType<typeof getRec
       position: i + 1,
       text: s,
     })),
+    nutrition: recipe.nutrition
+      ? {
+          '@type': 'NutritionInformation',
+          calories: recipe.nutrition.calories ? `${recipe.nutrition.calories} calories` : undefined,
+          fatContent: recipe.nutrition.fatContent,
+          carbohydrateContent: recipe.nutrition.carbohydrateContent,
+          proteinContent: recipe.nutrition.proteinContent,
+        }
+      : undefined,
+    aggregateRating: recipe.rating
+      ? {
+          '@type': 'AggregateRating',
+          ratingValue: recipe.rating.value,
+          ratingCount: recipe.rating.count,
+        }
+      : undefined,
+    video: recipe.video
+      ? {
+          '@type': 'VideoObject',
+          name: `${recipe.title} recipe`,
+          description: `How to make ${recipe.title}`,
+          thumbnailUrl: recipe.video.thumbnail || `${base}/og/recipe/${recipe.slug}.png`,
+          uploadDate: recipe.date || undefined,
+          contentUrl: recipe.video.url,
+          embedUrl: recipe.video.embedUrl || undefined,
+          duration: toISO(recipe.video.duration),
+        }
+      : undefined,
   };
+
   return (
     <script
       type='application/ld+json'
@@ -97,13 +147,8 @@ function BreadcrumbJsonLd({ slug, title }: { slug: string; title: string }) {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
     itemListElement: [
-      { '@type': 'ListItem', position: 1, name: 'Recipes', item: '${base}/recipes' },
-      {
-        '@type': 'ListItem',
-        position: 2,
-        name: title,
-        item: `${base}/recipes/${slug}`,
-      },
+      { '@type': 'ListItem', position: 1, name: 'Recipes', item: `${base}/recipes` },
+      { '@type': 'ListItem', position: 2, name: title, item: `${base}/recipes/${slug}` },
     ],
   };
   return (
@@ -133,44 +178,20 @@ function FaqJsonLd({ faqs }: { faqs?: { q: string; a: string }[] }) {
   );
 }
 
-// Affiliate anchor
-function AffLink({ item, label }: { item: AffItem; label?: string }) {
-  const href = buildAffiliateUrl(item);
-  return (
-    <a
-      href={href}
-      target='_blank'
-      rel='nofollow sponsored noopener'
-      data-affiliate={item.key}
-      className='inline-flex items-center gap-1 rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-300 underline-offset-2 hover:bg-zinc-900 hover:underline'>
-      <Link2 className='size-3' />
-      {label ?? item.label}
-    </a>
-  );
-}
-
 export default async function RecipeDetail({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const recipe = getRecipe(slug);
   if (!recipe) return notFound();
 
-  // 1) Auto-match from ingredients
   const baseMatches = matchAffiliatesFromIngredients(recipe.ingredients, DEFAULT_AFFILIATES);
-
-  // 2) Merge optional hints from the recipe (tools or explicit keys)
-  // In your recipe data you can add:
-  // tools: ['wok-spatula', 'chef-knife']
-  // affiliates: { keys: ['sesame-paste'], extra: [{ key:'my-item', label:'...', queries:['...'], kind:'pantry' }] }
   const mergedMatches = mergeRecipeHints(
     baseMatches,
     recipe.affiliates || { keys: recipe.tools },
     DEFAULT_AFFILIATES,
   );
 
-  // 3) Split into pantry and gear to place contextually
   const pantry = mergedMatches.filter((m) => m.kind !== 'gear').slice(0, 6);
   const gear = mergedMatches.filter((m) => m.kind === 'gear').slice(0, 4);
-
   const related = RECIPES.filter((r) => r.tag === recipe.tag && r.slug !== recipe.slug).slice(0, 3);
   const faqs = recipe.faqs as { q: string; a: string }[] | undefined;
 
@@ -180,21 +201,32 @@ export default async function RecipeDetail({ params }: { params: Promise<{ slug:
       <BreadcrumbJsonLd slug={recipe.slug} title={recipe.title} />
       <FaqJsonLd faqs={faqs} />
 
-      {/* Top meta */}
       <div className='mb-6 flex items-center justify-between'>
         <Link
           href='/recipes'
           className='inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-100'>
-          <ArrowLeft className='size-4' /> Back to recipes
+          <ArrowLeft className='size-4' aria-hidden /> Back to recipes
         </Link>
         <div className='flex items-center gap-2 text-xs text-zinc-400'>
-          <Clock className='size-4' />
+          <Clock className='size-4' aria-hidden />
           <span>{recipe.time}</span>
         </div>
       </div>
 
-      {/* Title + quick actions */}
       <h1 className='text-2xl font-medium text-zinc-100'>{recipe.title}</h1>
+
+      {recipe.image && (
+        <div className='mt-4 overflow-hidden rounded-lg border border-zinc-800'>
+          <Image
+            src={recipe.image}
+            alt={`${recipe.title} served on a plate`}
+            width={1200}
+            height={630}
+            priority
+          />
+        </div>
+      )}
+
       <div className='mt-2 flex items-center gap-2'>
         <Badge variant='outline' className='border-zinc-700 text-zinc-300'>
           {recipe.tag}
@@ -206,11 +238,15 @@ export default async function RecipeDetail({ params }: { params: Promise<{ slug:
         </a>
       </div>
 
-      {/* Minimal story block */}
+      <p className='mt-3 text-[11px] text-zinc-500'>
+        Links to recommended tools and pantry items may be affiliate links. If you buy, I may earn a
+        small commission at no extra cost to you.
+      </p>
+
       <Card className='mt-4 border-zinc-800 bg-zinc-950'>
         <CardContent className='p-4'>
           <div className='mb-2 flex items-center gap-2 text-zinc-300'>
-            <BookOpenText className='size-4 text-zinc-400' />
+            <BookOpenText className='size-4 text-zinc-400' aria-hidden />
             <span className='text-sm font-medium'>Notes</span>
           </div>
           <p className='text-sm leading-relaxed text-zinc-400'>
@@ -218,12 +254,24 @@ export default async function RecipeDetail({ params }: { params: Promise<{ slug:
             the pace even.
           </p>
 
-          {/* High-intent CTA strip (top placement for CTR) */}
           {pantry.length > 0 && (
-            <div className='mt-4 flex flex-wrap items-center gap-2'>
-              <span className='text-xs text-zinc-500'>Pantry links:</span>
-              {pantry.slice(0, 3).map((item) => (
-                <AffLink key={item.key} item={item} />
+            <div className='mt-3 flex flex-wrap items-center gap-2'>
+              {pantry.slice(0, 4).map((it) => (
+                <AffLink key={it.key} item={it} variant='chip' position='top_needs' />
+              ))}
+            </div>
+          )}
+
+          {pantry.length > 0 && (
+            <div className='mt-4 flex flex-wrap items-center gap-2 text-xs'>
+              <span className='text-zinc-500'>Pantry:</span>
+              {pantry.slice(0, 3).map((item, i) => (
+                <span key={item.key} className='text-zinc-400'>
+                  <AffLink item={item} iconOnly position='notes_pantry' />
+                  {i < Math.min(2, pantry.length - 1) ? (
+                    <span className='px-1 text-zinc-600'>·</span>
+                  ) : null}
+                </span>
               ))}
             </div>
           )}
@@ -232,49 +280,52 @@ export default async function RecipeDetail({ params }: { params: Promise<{ slug:
 
       <Separator className='my-6 border-zinc-800' />
 
-      {/* Body */}
       <div className='grid gap-6 md:grid-cols-[1fr_.8fr]'>
-        {/* Ingredients with inline links next to matches */}
         <Card id='ingredients' className='border-zinc-800 bg-zinc-950'>
           <CardContent className='p-6'>
             <h2 className='text-sm font-medium text-zinc-200'>Ingredients</h2>
-            <ul className='mt-3 list-disc space-y-1 pl-5 text-sm text-zinc-300'>
+
+            <ul className='mt-3 space-y-1 text-sm text-zinc-300'>
               {recipe.ingredients.map((line, idx) => {
+                const id = `ing-${idx + 1}`;
                 const lower = line.toLowerCase();
+
                 const matched = pantry.find((m) =>
                   [m.label, ...(m.queries || [])].some((q) => lower.includes(q.toLowerCase())),
                 );
+
+                const m = line.match(/^(\s*\d+([\/.\d]*)?\s*\w*\s*)?(.*)$/i);
+                const qtyUnit = m?.[1] ?? '';
+                const namePart = (m?.[3] ?? line).trim();
+
+                const amazonUrl = matched
+                  ? `https://www.amazon.com/s?k=${encodeURIComponent(namePart)}&tag=${
+                      process.env.NEXT_PUBLIC_AMAZON_TAG
+                    }`
+                  : null;
+
                 return (
-                  <li key={idx}>
-                    {line}
-                    {matched ? (
-                      <span className='ml-2 inline-flex items-center gap-1 align-middle text-xs text-zinc-400'>
-                        <AffLink item={matched} label={`Buy ${matched.label.toLowerCase()}`} />
-                      </span>
-                    ) : null}
+                  <li key={idx} id={id} className='group list-inside list-disc pl-5'>
+                    {matched && amazonUrl ? (
+                      <>
+                        <span className='text-zinc-400'>{qtyUnit}</span>
+                        <TrackedAmazonLink
+                          href={amazonUrl}
+                          label={namePart}
+                          itemKey={matched.key}
+                          position='ingredients_list'
+                        />
+                      </>
+                    ) : (
+                      <span>{line}</span>
+                    )}
                   </li>
                 );
               })}
             </ul>
-
-            {/* Secondary pantry cluster for anyone who scrolls here */}
-            {pantry.length > 3 && (
-              <div className='mt-4 rounded-md border border-zinc-800 bg-zinc-950 p-3'>
-                <div className='mb-2 inline-flex items-center gap-2 text-xs text-zinc-400'>
-                  <ShoppingBag className='size-3.5' />
-                  <span>Pantry</span>
-                </div>
-                <div className='flex flex-wrap gap-2'>
-                  {pantry.slice(3, 8).map((item) => (
-                    <AffLink key={item.key} item={item} />
-                  ))}
-                </div>
-              </div>
-            )}
           </CardContent>
         </Card>
 
-        {/* Steps + gear */}
         <Card className='border-zinc-800 bg-zinc-950'>
           <CardContent className='p-6'>
             <h2 className='text-sm font-medium text-zinc-200'>Steps</h2>
@@ -284,16 +335,21 @@ export default async function RecipeDetail({ params }: { params: Promise<{ slug:
               ))}
             </ol>
 
-            {/* Gear cluster sits after steps for natural timing */}
             {gear.length > 0 && (
               <div className='mt-5 rounded-md border border-zinc-800 bg-zinc-950 p-3 text-xs'>
                 <div className='mb-2 inline-flex items-center gap-2 text-zinc-400'>
-                  <Info className='size-3.5' />
+                  <Info className='size-3.5' aria-hidden />
                   <span>Gear that fits</span>
                 </div>
                 <div className='flex flex-wrap gap-2'>
                   {gear.map((item) => (
-                    <AffLink key={item.key} item={item} />
+                    <AffLink
+                      key={item.key}
+                      item={item}
+                      iconOnly
+                      className='opacity-80 hover:opacity-100'
+                      position='gear_box'
+                    />
                   ))}
                 </div>
               </div>
@@ -302,8 +358,7 @@ export default async function RecipeDetail({ params }: { params: Promise<{ slug:
         </Card>
       </div>
 
-      {/* Related recipes */}
-      {related.length ? (
+      {related.length > 0 && (
         <>
           <Separator className='my-8 border-zinc-800' />
           <section className='mt-2'>
@@ -324,14 +379,8 @@ export default async function RecipeDetail({ params }: { params: Promise<{ slug:
             </ul>
           </section>
         </>
-      ) : null}
-
-      {/* Back to top */}
-      <div className='mt-8'>
-        <Button asChild className='h-9 bg-zinc-100 text-zinc-900 hover:bg-white'>
-          <a href='#ingredients'>Back to ingredients</a>
-        </Button>
-      </div>
+      )}
+      <StickyAffBar items={pantry as AffItem[]} />
     </article>
   );
 }
