@@ -7,17 +7,16 @@ type Props = {
   item: AffItem;
   label?: string;
   className?: string;
-  position?: string; // analytics placement
+  position?: string;
   variant?: 'text' | 'button' | 'chip';
-  iconOnly?: boolean; // icon only with SR text
-  withIcon?: boolean; // icon + text
+  iconOnly?: boolean;
+  withIcon?: boolean;
 };
 
 function cx(...a: (string | false | undefined)[]) {
   return a.filter(Boolean).join(' ');
 }
 
-// Hostname -> icon map using stable Lucide exports
 function vendorIcon(host: string) {
   const h = host.toLowerCase();
   if (h.includes('amazon')) return { Icon: ShoppingCart, title: 'Amazon' };
@@ -63,7 +62,7 @@ export function AffLink({
   const text = label ?? item.label ?? 'Buy';
 
   const onClick = () => {
-    // optional analytics if present
+    // optional analytics
     // @ts-ignore
     window.plausible?.('Affiliate Click', {
       props: { key: item.key, label: text, vendor: vendorName, position },

@@ -4,7 +4,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { getRecipe, RECIPES } from '@/data/recipes';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
+import { CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Clock, BookOpenText, Info } from 'lucide-react';
@@ -55,7 +56,6 @@ export async function generateMetadata({
     robots: {
       index: true,
       follow: true,
-      // Put granular rules in the googleBot string per Next.js types
       googleBot: 'max-image-preview:large, max-snippet:-1, max-video-preview:-1',
     },
     openGraph: {
