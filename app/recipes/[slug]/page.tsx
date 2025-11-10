@@ -7,11 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Clock, Link2, BookOpenText, Info } from 'lucide-react';
+import { ArrowLeft, Clock, BookOpenText, Info } from 'lucide-react';
 import {
   matchAffiliatesFromIngredients,
   mergeRecipeHints,
-  buildAffiliateUrl,
   DEFAULT_AFFILIATES,
   type AffItem,
 } from '@/lib/affiliates';
@@ -26,6 +25,12 @@ export function generateStaticParams() {
   return RECIPES.map((r) => ({ slug: r.slug }));
 }
 
+// Safe helper for optional fields not on the Recipe type
+function getSeoDesc(obj: unknown): string | undefined {
+  const s = (obj as any)?.seoDescription;
+  return typeof s === 'string' && s.trim() ? s : undefined;
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -37,9 +42,9 @@ export async function generateMetadata({
 
   const base = getBaseUrl();
   const title = `${r.title} Recipe (${r.time})`;
-  const desc = r.seoDescription
-    ? r.seoDescription
-    : `Make ${r.title} at home. Ingredients, step-by-step instructions, timing (${r.time}), and tools.`;
+  const desc =
+    getSeoDesc(r) ??
+    `Make ${r.title} at home. Ingredients, step-by-step instructions, timing (${r.time}), and tools.`;
   const url = `${base}/recipes/${r.slug}`;
   const og = `${base}/og/recipe/${r.slug}.png`;
 
@@ -84,18 +89,20 @@ function RecipeJsonLd({ recipe }: { recipe: NonNullable<ReturnType<typeof getRec
     '@context': 'https://schema.org',
     '@type': 'Recipe',
     name: recipe.title,
-    description: recipe.seoDescription || `Recipe for ${recipe.title}`,
+    description: getSeoDesc(recipe) || `Recipe for ${recipe.title}`,
     datePublished: recipe.date ?? undefined,
     image: recipe.image ? [recipe.image] : [`${base}/og/recipe/${recipe.slug}.png`],
     author: recipe.author
       ? { '@type': 'Person', name: recipe.author }
       : { '@type': 'Organization', name: 'Recipe.System' },
     recipeCategory: recipe.tag || undefined,
-    recipeCuisine: recipe.cuisine || undefined,
-    keywords: [recipe.tag, recipe.title, ...(recipe.keywords || [])].filter(Boolean).join(', '),
+    recipeCuisine: (recipe as any).cuisine || undefined,
+    keywords: [recipe.tag, recipe.title, ...(((recipe as any).keywords as string[]) || [])]
+      .filter(Boolean)
+      .join(', '),
     totalTime: toISO(recipe.time),
-    prepTime: toISO(recipe.prepTime),
-    cookTime: toISO(recipe.cookTime),
+    prepTime: toISO((recipe as any).prepTime),
+    cookTime: toISO((recipe as any).cookTime),
     recipeYield: recipe.yield ?? undefined,
     recipeIngredient: recipe.ingredients,
     recipeInstructions: recipe.steps.map((s: string, i: number) => ({
@@ -103,32 +110,34 @@ function RecipeJsonLd({ recipe }: { recipe: NonNullable<ReturnType<typeof getRec
       position: i + 1,
       text: s,
     })),
-    nutrition: recipe.nutrition
+    nutrition: (recipe as any).nutrition
       ? {
           '@type': 'NutritionInformation',
-          calories: recipe.nutrition.calories ? `${recipe.nutrition.calories} calories` : undefined,
-          fatContent: recipe.nutrition.fatContent,
-          carbohydrateContent: recipe.nutrition.carbohydrateContent,
-          proteinContent: recipe.nutrition.proteinContent,
+          calories: (recipe as any).nutrition.calories
+            ? `${(recipe as any).nutrition.calories} calories`
+            : undefined,
+          fatContent: (recipe as any).nutrition.fatContent,
+          carbohydrateContent: (recipe as any).nutrition.carbohydrateContent,
+          proteinContent: (recipe as any).nutrition.proteinContent,
         }
       : undefined,
-    aggregateRating: recipe.rating
+    aggregateRating: (recipe as any).rating
       ? {
           '@type': 'AggregateRating',
-          ratingValue: recipe.rating.value,
-          ratingCount: recipe.rating.count,
+          ratingValue: (recipe as any).rating.value,
+          ratingCount: (recipe as any).rating.count,
         }
       : undefined,
-    video: recipe.video
+    video: (recipe as any).video
       ? {
           '@type': 'VideoObject',
           name: `${recipe.title} recipe`,
           description: `How to make ${recipe.title}`,
-          thumbnailUrl: recipe.video.thumbnail || `${base}/og/recipe/${recipe.slug}.png`,
+          thumbnailUrl: (recipe as any).video.thumbnail || `${base}/og/recipe/${recipe.slug}.png`,
           uploadDate: recipe.date || undefined,
-          contentUrl: recipe.video.url,
-          embedUrl: recipe.video.embedUrl || undefined,
-          duration: toISO(recipe.video.duration),
+          contentUrl: (recipe as any).video.url,
+          embedUrl: (recipe as any).video.embedUrl || undefined,
+          duration: toISO((recipe as any).video.duration),
         }
       : undefined,
   };
@@ -257,7 +266,7 @@ export default async function RecipeDetail({ params }: { params: Promise<{ slug:
           {pantry.length > 0 && (
             <div className='mt-3 flex flex-wrap items-center gap-2'>
               {pantry.slice(0, 4).map((it) => (
-                <AffLink key={it.key} item={it} variant='chip' position='top_needs' />
+                <AffLink key={it.key} item={it} variant='chip' position='top_needs' withIcon />
               ))}
             </div>
           )}
