@@ -55,9 +55,8 @@ export async function generateMetadata({
     robots: {
       index: true,
       follow: true,
-      maxImagePreview: 'large',
-      maxSnippet: -1,
-      maxVideoPreview: -1,
+      // Put granular rules in the googleBot string per Next.js types
+      googleBot: 'max-image-preview:large, max-snippet:-1, max-video-preview:-1',
     },
     openGraph: {
       type: 'article',
@@ -258,18 +257,9 @@ export default async function RecipeDetail({ params }: { params: Promise<{ slug:
             <BookOpenText className='size-4 text-zinc-400' aria-hidden />
             <span className='text-sm font-medium'>Notes</span>
           </div>
-          <p className='text-sm leading-relaxed text-zinc-400'>
-            Calm prep, clear steps, steady heat. Pantry staples do the work. Clean workflow keeps
-            the pace even.
-          </p>
-
-          {pantry.length > 0 && (
-            <div className='mt-3 flex flex-wrap items-center gap-2'>
-              {pantry.slice(0, 4).map((it) => (
-                <AffLink key={it.key} item={it} variant='chip' position='top_needs' withIcon />
-              ))}
-            </div>
-          )}
+          <div className='text-sm text-zinc-300'>
+            {recipe.notes ? recipe.notes : <em>No additional notes for this recipe.</em>}
+          </div>
 
           {pantry.length > 0 && (
             <div className='mt-4 flex flex-wrap items-center gap-2 text-xs'>
