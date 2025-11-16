@@ -20,7 +20,7 @@ import { AffLink } from '@/components/AffLink';
 import { StickyAffBar } from '@/components/StickyAffBar';
 import TrackedAmazonLink from '@/components/TrackedAmazonLink';
 
-export const revalidate = 60 * 60;
+export const revalidate = 3600;
 
 export function generateStaticParams() {
   return RECIPES.map((r) => ({ slug: r.slug }));
